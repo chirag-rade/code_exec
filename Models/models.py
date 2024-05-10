@@ -170,12 +170,15 @@ class LLMModel:
         self.as_evaluator = as_evaluator
         self.prompt_template =  self.correct_prompt_template(prompt_template)
         self.chat_history = chat_history if chat_history else []
+        self.chat_history_untouched = chat_history if chat_history else []
         self.id = str(uuid.uuid4())
         self.chain = None
         self.retry = self.config.get("retry", 3)
+        self.retry_with_history = self.config.get("retry_with_history", False)
         self.use_history = use_history
         self.first_message = True
         self.initial_message  = []
+    
         
     def init(self):
         self.chain = self.create_chain()
@@ -187,27 +190,21 @@ class LLMModel:
                         response_json = json.loads(rx.content)
                         return response_json 
                     except Exception as e:
-                        try:
-                            if self.test: raise Exception("Invalid") # for debugging purposes
-                            json_start = rx.content.index('{')
-                            json_end = rx.content.rindex('}')
-                            json_str = rx.content[json_start:json_end+1]
-                            json_obj = json.loads( json_str)
-                            json_obj.update({"other_content": rx.content[:json_start] + rx.content[json_end+1:]})
-                            return json_obj
-                        except Exception as e: 
-                            #try for a specific number of time
-                            self.chat_history.append(
-                                HumanMessage(content="Its's Important you reply as json as described, Please try again")
-                            )
-                            return self(self.chat_history)
+                        if self.test: raise Exception("Invalid") # for debugging purposes
+                        json_start = rx.content.index('{')
+                        json_end = rx.content.rindex('}')
+                        json_str = rx.content[json_start:json_end+1]
+                        json_obj = json.loads( json_str)
+                        json_obj.update({"other_content": rx.content[:json_start] + rx.content[json_end+1:]})
+                        return json_obj
+                        
                             
 
         elif self.provider in ["fireworks_api", "openai_api"]:
                     return json.loads(rx.content) if self.output_schema != None else rx.content
             
         
-    def __call__(self, messages):
+    def __call__(self, messages, retrying=False):
         
         if self.as_evaluator:
             #print(type(messages))
@@ -227,7 +224,7 @@ class LLMModel:
         if isinstance(messages, dict):
             #does it have messages in it?
             if "messages" in messages.keys():
-                IN_   = self.prepare_messages(messages["messages"])
+                if not retrying:IN_   = self.prepare_messages(messages["messages"])
             else: #no messages just inputs, we add messages
                 messages.update({"messages":[]})
                 IN_ = messages
@@ -245,18 +242,36 @@ class LLMModel:
     
         response =  self.chain.invoke(IN_)
         rx =  self.add_to_history_and_prepare_response(response)
+        
         print("DEBUG: ", rx)
         if self.try_to_parse and self.output_schema !=None: #user wants answer as json
+            
             try:
+                #raise Exception("test exception raised")
                 return CustomJSONParser(rx)
             except Exception as e:
-                return self.old_parser(rx)
+                try:
+                    #raise Exception("test exception raised")
+                    return self.old_parser(rx)
+                except Exception as e:
+                    self.retry -= 1
+                    if self.retry > 0:
+                        print("retrying...", "retry remaining ", self.retry)
+                        if self.retry_with_history:
+                            self.chat_history.append(HumanMessage(content="You failed to output a valid/parsable JSON. Please try again"))
+                            self.chat_history_untouched.append(HumanMessage(content="You failed to output a valid/parsable JSON. Please try again"))
+                        elif not self.retry_with_history and len(self.chat_history) > 0:  # remove last response from history - this will affect main chat history record
+                            self.chat_history.pop(-1)  # Correctly remove the last item
+                        return self(messages, retrying=True)  # Recursively call __call__ with the original messages
+                    self.retry = self.config.get('retry', 3)
+                    raise Exception("JSON Parsing Retry exceeded")
+            
         else:
             return rx if isinstance(rx, str) else rx.content
            
     
     def get_chat_history(self):
-        return  self.initial_message.messages + self.chat_history[1:]
+        return  self.initial_message.messages + self.chat_history_untouched[1:]
         
          
     def create_chain(self):
@@ -280,6 +295,7 @@ class LLMModel:
           
     def prepare_messages(self, messages: list):
         self.chat_history.extend(messages)
+        self.chat_history_untouched.extend(messages)
         #Convert to model specific format
         if self.provider in ["openai_api", "anthropic_api"] :
             return {"messages":self.chat_history}
@@ -314,8 +330,10 @@ class LLMModel:
         #get response
         if self.use_history == True: 
             self.chat_history.append(response)
+            self.chat_history_untouched.append(response)
         else:
             self.chat_history = [] #clear the history if not to be saved
+            self.chat_history_untouched = []
         return response
          
         
