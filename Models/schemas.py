@@ -37,3 +37,4 @@ class FeedbackISC(BaseModel):
 
 class FeedbackBasic(BaseModel):
     response: str = Field(description="The response string returned by the LLM")
+    

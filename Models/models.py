@@ -7,6 +7,7 @@ from langchain_core.messages import (
     FunctionMessage,
     HumanMessage,
 )
+from langchain_core.output_parsers.json import parse_partial_json
 from pydantic import BaseModel, Field, validator
 from langchain.output_parsers import PydanticOutputParser
 import json
@@ -32,6 +33,10 @@ import uuid
 import tiktoken
 from typing import Any
 from . import schemas
+import copy
+from Models.schemas import AspectorEvaluatorInputSchema, FeedbackISC, FeedbackBasic,  QualityAspect, AspectorRole
+from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.output_parsers.json import parse_json_markdown
 
 load_dotenv()
 
@@ -43,19 +48,117 @@ def num_tokens_from_string(obj: Any) -> int:
     return num_tokens
 
 
+def process_messages(messages, provider, model):
+    if  provider == "openai_api" or model+provider == "llama-v3-70b-instruct"+"fireworks_api":
+        print("DEBUG:", "...API token count")
+        current_input = ""
+        inputs = []
+        outputs = []
+        input_token = 0
+        output_token = 0
+        
+        for message in messages:
+            if isinstance(message, AIMessage):
+                input_token += message.response_metadata['token_usage']['prompt_tokens'] 
+                output_token += message.response_metadata['token_usage']['completion_tokens']
+                
+                inputs.append(current_input)  # Save the current state of input_accumulator before adding AI content
+                outputs.append(message.content)
+                # Reset current_input to include all previous messages for the next AI message
+                current_input += message.content
+            else:
+                current_input += message.content
+
+        all_messages_concat = {"in": inputs, "out": outputs}
+        all_in = all_messages_concat['in']
+        all_out = all_messages_concat['out']
+        return {"in": input_token,"out":output_token}, all_messages_concat
+    
+    elif provider in ["anthropic_api"]:
+        print("DEBUG:", "...API token count")
+        current_input = ""
+        inputs = []
+        outputs = []
+        input_token = 0
+        output_token = 0
+        
+        for message in messages:
+            if isinstance(message, AIMessage):
+                input_token += message.response_metadata['usage']['input_tokens']
+                output_token += message.response_metadata['usage']['output_tokens']
+                
+                inputs.append(current_input)  # Save the current state of input_accumulator before adding AI content
+                outputs.append(message.content)
+                # Reset current_input to include all previous messages for the next AI message
+                current_input += message.content
+            else:
+                current_input += message.content
+
+        all_messages_concat = {"in": inputs, "out": outputs}
+        all_in = all_messages_concat['in']
+        all_out = all_messages_concat['out']
+        return {"in": input_token,"out":output_token}, all_messages_concat
+        
+    
+    else:
+        print("DEBUG:", "...Manual token count")
+        current_input = ""
+        inputs = []
+        outputs = []
+        
+        for message in messages:
+            if isinstance(message, AIMessage):
+                inputs.append(current_input)  # Save the current state of input_accumulator before adding AI content
+                outputs.append(message.content)
+                # Reset current_input to include all previous messages for the next AI message
+                current_input += message.content
+            else:
+                current_input += message.content
+
+        all_messages_concat = {"in": inputs, "out": outputs}
+        all_in = all_messages_concat['in']
+        all_out = all_messages_concat['out']
+        return {"in":num_tokens_from_string("".join(all_in)) ,"out": num_tokens_from_string("".join(all_out))}, all_messages_concat
+
+
+
+def CustomJSONParser(ai_message) -> dict:
+    if isinstance(ai_message, str):
+        s = ai_message
+    else:
+        s = ai_message.content
+    r = parse_json_markdown(s)
+    if r is None:
+        # Extract JSON from text wrapped in triple backticks
+        try:
+            start_idx = s.index("```json") + len("```json")
+        except ValueError:
+            try:
+                start_idx = s.index("```") + len("```")
+            except ValueError:
+                start_idx = 0
+
+        end_idx = s.rindex("```", start_idx) if "```" in s[start_idx:] else len(s)
+
+        # Extract the JSON string
+        json_str = s[start_idx:end_idx].strip()
+        r = parse_json_markdown(json_str)
+    return r
+
 class LLMModel:
     def __init__(self, provider, model, 
                  config: dict = {},
                  tools: list = [],
-                 output_schema: dict = None, 
+                 output_schema: dict = FeedbackBasic, 
                  input_schema = None, 
                  name: str = None,
-                 prompt_template = None,
-                 chat_history: list = None,
+                 prompt_template:  ChatPromptTemplate = None,
+                 try_to_parse:bool = True,
+                 chat_history: list = [],
                  as_evaluator:bool =  False,
-                 use_history: bool = False):
+                 use_history: bool = True):
         
-        
+        self.try_to_parse = try_to_parse
         self.test = False
         self.provider = provider
         self.model = model
@@ -65,25 +168,47 @@ class LLMModel:
         self.input_schema = input_schema
         self.name = name
         self.as_evaluator = as_evaluator
-        self.prompt_template = prompt_template if prompt_template is not None else ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "{format_instructions}"
-                ),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
-        )
+        self.prompt_template =  self.correct_prompt_template(prompt_template)
         self.chat_history = chat_history if chat_history else []
         self.id = str(uuid.uuid4())
         self.chain = None
-        self.retries = self.config.get("retries", 2)
+        self.retry = self.config.get("retry", 3)
         self.use_history = use_history
+        self.first_message = True
+        self.initial_message  = []
         
     def init(self):
         self.chain = self.create_chain()
         
+        
+    def old_parser(self, rx):
+        if self.provider in ["anthropic_api"]:
+                    try:
+                        response_json = json.loads(rx.content)
+                        return response_json 
+                    except Exception as e:
+                        try:
+                            if self.test: raise Exception("Invalid") # for debugging purposes
+                            json_start = rx.content.index('{')
+                            json_end = rx.content.rindex('}')
+                            json_str = rx.content[json_start:json_end+1]
+                            json_obj = json.loads( json_str)
+                            json_obj.update({"other_content": rx.content[:json_start] + rx.content[json_end+1:]})
+                            return json_obj
+                        except Exception as e: 
+                            #try for a specific number of time
+                            self.chat_history.append(
+                                HumanMessage(content="Its's Important you reply as json as described, Please try again")
+                            )
+                            return self(self.chat_history)
+                            
+
+        elif self.provider in ["fireworks_api", "openai_api"]:
+                    return json.loads(rx.content) if self.output_schema != None else rx.content
+            
+        
     def __call__(self, messages):
+        
         if self.as_evaluator:
             #print(type(messages))
             if not isinstance(messages, self.input_schema):
@@ -91,59 +216,73 @@ class LLMModel:
                 return None
             self.create_prompt_template(messages) #use the instruction in the input to recreate the template
             messages = [HumanMessage(content=str(messages.conversation))]
-        
-        
+ 
         
         self.chain = self.create_chain()
-        IN_ = self.prepare_messages(messages)
+        
+      
+        
+        
+        #here i check if you pass a dict
+        if isinstance(messages, dict):
+            #does it have messages in it?
+            if "messages" in messages.keys():
+                IN_   = self.prepare_messages(messages["messages"])
+            else: #no messages just inputs, we add messages
+                messages.update({"messages":[]})
+                IN_ = messages
+        elif isinstance(messages, list): #this  user pass a list of langchain messages
+            IN_ = self.prepare_messages(messages)
+            
+        #----------
+        
+        if self.first_message == True:
+            print("INFO:", "First Message")
+            self.initial_message = self.prompt_template.invoke(IN_)
+            self.first_message = False
+            
+        #---------
+    
         response =  self.chain.invoke(IN_)
         rx =  self.add_to_history_and_prepare_response(response)
-        if self.provider in ["anthropic_api"]:
+        print("DEBUG: ", rx)
+        if self.try_to_parse and self.output_schema !=None: #user wants answer as json
             try:
-                response_json = json.loads(rx.content)
-                return rx
-            except:
-                try:
-                    if self.test: raise Exception("Invalid") # for debugging purposes
-                    json_start = rx.content.index('{')
-                    json_end = rx.content.rindex('}')
-                    json_str = rx.content[json_start:json_end+1]
-                    json_obj = json.loads( json_str)
-                    json_obj.update({"other_content": rx.content[:json_start] + rx.content[json_end+1:]})
-                    final_rx = json.dumps(json_obj)
-                    return AIMessage(content=final_rx)
-                except:
-                    self.chat_history.append(
-                        HumanMessage(content="Its's Important you reply as json as described, Please try again")
-                    )
-                    rx = self(self.chat_history)
-                    return rx
-
+                return CustomJSONParser(rx)
+            except Exception as e:
+                return self.old_parser(rx)
         else:
-            return rx   
+            return rx if isinstance(rx, str) else rx.content
+           
+    
+    def get_chat_history(self):
+        return  self.initial_message.messages + self.chat_history[1:]
+        
          
     def create_chain(self):
         functions = [format_tool_to_openai_function(t) for t in self.tools]
         llm = self.create_model()
-        pydantic_parser = PydanticOutputParser(pydantic_object=self.output_schema)
-        format_instructions = pydantic_parser.get_format_instructions()
-        self.prompt = self.prompt_template.partial(format_instructions=format_instructions)
-        if len(self.tools) is not 0:
-            return self.prompt | llm | llm.bind_functions(functions)
-        else:
-            return self.prompt | llm
         
-        
-    
-    def prepare_messages(self, messages: list):
-        
-      
-        self.chat_history.extend(messages)
-       
+        if self.output_schema != None : #aslong as there is an output schema then give the instructions
+            pydantic_parser = PydanticOutputParser(pydantic_object=self.output_schema)
+            format_instructions = pydantic_parser.get_format_instructions()
+            self.prompt_template = self.prompt_template.partial(format_instructions=format_instructions)
+        else: #when there is no output schema, we still need to fill up the template
+            self.prompt_template = self.prompt_template.partial(format_instructions="")
             
+            
+
+ 
+        if len(self.tools) is not 0:
+            return self.prompt_template | llm | llm.bind_functions(functions)
+        else:
+            return self.prompt_template | llm
+          
+    def prepare_messages(self, messages: list):
+        self.chat_history.extend(messages)
         #Convert to model specific format
         if self.provider in ["openai_api", "anthropic_api"] :
-            return self.chat_history
+            return {"messages":self.chat_history}
         
         elif self.provider in ["fireworks_api"] : #uses dict messages
             new_messages =[]
@@ -167,10 +306,11 @@ class LLMModel:
                     )
             return {"messages":new_messages}
             
-    
-            
-    
+
     def add_to_history_and_prepare_response(self, response):
+        #ensure response is an AImessage
+        if not isinstance(response, AIMessage):
+            response = AIMessage(content=str(response))
         #get response
         if self.use_history == True: 
             self.chat_history.append(response)
@@ -185,18 +325,18 @@ class LLMModel:
     def create_model(self):
         if self.provider == "openai_api":
             mk = self.config.get("model_kwargs", {})
-            mk.update({"response_format":{"type": "json_object"}})
+            if self.try_to_parse and self.output_schema != None: mk.update({"response_format":{"type": "json_object"}}) 
             return ChatOpenAI(model=self.model, **self.config.get("params",{}), streaming=False, model_kwargs =mk)
         elif self.provider == "groq_api":
             mk = self.config.get("model_kwargs", {})
-            mk.update({"response_format":{"type": "json_object"}})
+            if self.try_to_parse and self.output_schema != None: mk.update({"response_format":{"type": "json_object"}}) 
             return ChatGroq(model=self.model, **self.config.get("params",{}), streaming=False, model_kwargs =mk)
         elif self.provider == "anthropic_api":
             mk = self.config.get("model_kwargs", {})
             return ChatAnthropic(model=self.model, **self.config.get("params",{}), streaming=False, model_kwargs =mk)
         elif self.provider == "fireworks_api":
             mk = self.config.get("model_kwargs", {})
-            mk.update({"response_format":{"type": "json_object"}})
+            if self.try_to_parse and self.output_schema != None: mk.update({"response_format":{"type": "json_object"}}) 
             if self.model in [
                 "dbrx-instruct",
                 "mixtral-8x22b-instruct",
@@ -224,19 +364,59 @@ class LLMModel:
         else:
             raise NotImplementedError("Model creation for the given provider is not implemented.")
 
+    
    
     def get_total_tokens(self):
-        all_messages = self.prompt.format_messages(messages=self.chat_history)
-        if self.provider in ["fireworks_api", "openai_api"] and len(self.chat_history) > 0:
-            return self.chat_history[-1].response_metadata['token_usage']['total_tokens'], all_messages
-        
-        elif self.provider in ["anthropic_api"] and len(self.chat_history) > 0:
-            return  (self.chat_history[-1].response_metadata['usage']['input_tokens'] + 
-                    self.chat_history[-1].response_metadata['usage']['output_tokens']), all_messages
+        return  process_messages(self.get_chat_history(), self.provider, self.model)
+   
+    
+    def correct_prompt_template(self, old_prompt_template):
+        new_prompt_template = copy.deepcopy(old_prompt_template)
+        #if no prompt_template is given
+        if not new_prompt_template:
+            return ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "{format_instructions}" #if self.try_to_parse and self.output_schema != None else ""
+                    ),
+                    MessagesPlaceholder(variable_name="messages"),
+                ]
+            )
         
         else:
-            return num_tokens_from_string([message.content for message in all_messages]), all_messages
+            #if given but no format_instruction in system or not system at all
+            if "format_instructions" not in new_prompt_template.input_variables: # and self.try_to_parse
+                #find the last system message and insert format_instructions after  (better to come last)
+                sys_bool = [isinstance(msg_type, SystemMessagePromptTemplate) for msg_type in new_prompt_template.messages]
+                if True in sys_bool:
+                    #find the last True:
+                    last_occurrence_index = len(sys_bool) - 1 - sys_bool[::-1].index(True)
+                    # now insert the format_instructions into the last system message
+                    # Copy the old one:
+                    old_system_template = new_prompt_template.messages[0].dict()['prompt']["template"]
+                    new_system_template = "\n" + old_system_template + "\n{format_instructions}"
+                    # re-create and replace SystemMessagePromptTemplate
+                    new_prompt_template.messages[last_occurrence_index ] = SystemMessagePromptTemplate.from_template(new_system_template)
+                else:
+                    # when no system template, create one and insert on top
+                    system_message_template = SystemMessagePromptTemplate.from_template("{format_instructions}")
+                    new_prompt_template.messages.insert(0, system_message_template)
+            
+                
+        #add messages placeholder if nt already exists
+        msg_pl_bool =[isinstance(msg_type, MessagesPlaceholder) for msg_type in new_prompt_template]
+        if  msg_pl_bool:
+            #verify that the variable name is messages
+            for msg in new_prompt_template.messages:
+                if isinstance(msg, MessagesPlaceholder):
+                    if msg.variable_name == "messages":
+                        return new_prompt_template 
+            new_prompt_template.append(MessagesPlaceholder(variable_name="messages"))
+        else:
+            new_prompt_template.append(MessagesPlaceholder(variable_name="messages"))
         
+        return new_prompt_template
         
     def create_prompt_template(self, eval):
         self.prompt_template = ChatPromptTemplate.from_messages(
