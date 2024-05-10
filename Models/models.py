@@ -279,9 +279,13 @@ class LLMModel:
         llm = self.create_model()
         
         if self.output_schema != None : #aslong as there is an output schema then give the instructions
-            pydantic_parser = PydanticOutputParser(pydantic_object=self.output_schema)
-            format_instructions = pydantic_parser.get_format_instructions()
-            self.prompt_template = self.prompt_template.partial(format_instructions=format_instructions)
+            if isinstance(self.output_schema, dict):
+                format_instructions = self.output_schema
+            else:
+                pydantic_parser = PydanticOutputParser(pydantic_object=self.output_schema)
+                format_instructions = pydantic_parser.get_format_instructions()
+            
+            self.prompt_template = self.prompt_template.partial(format_instructions="IN JSON FORMAT: " + str(format_instructions))
         else: #when there is no output schema, we still need to fill up the template
             self.prompt_template = self.prompt_template.partial(format_instructions="")
             
