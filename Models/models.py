@@ -234,7 +234,7 @@ class LLMModel:
         #----------
         
         if self.first_message == True:
-            print("INFO:", "First Message")
+            #print("INFO:", "First Message")
             self.initial_message = self.prompt_template.invoke(IN_)
             self.first_message = False
             
@@ -243,7 +243,7 @@ class LLMModel:
         response =  self.chain.invoke(IN_)
         rx =  self.add_to_history_and_prepare_response(response)
         
-        print("DEBUG: ", rx)
+        #print("DEBUG: ", rx)
         if self.try_to_parse and self.output_schema !=None: #user wants answer as json
             
             try:
