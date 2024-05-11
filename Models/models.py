@@ -248,11 +248,15 @@ class LLMModel:
             
             try:
                 #raise Exception("test exception raised")
-                return CustomJSONParser(rx)
+                result = CustomJSONParser(rx)
+                self.validate_output_schema(result)
+                return result
             except Exception as e:
                 try:
                     #raise Exception("test exception raised")
-                    return self.old_parser(rx)
+                    result = self.old_parser(rx)
+                    self.validate_output_schema(result)
+                    return result
                 except Exception as e:
                     self.retry -= 1
                     if self.retry > 0:
@@ -268,7 +272,16 @@ class LLMModel:
             
         else:
             return rx if isinstance(rx, str) else rx.content
-           
+    
+    
+    def validate_output_schema(self, output):
+        if not isinstance(self.output_schema, dict) and self.try_to_parse:
+            try:
+                print("Validating output schema.....")
+                self.output_schema.model_validate(output)
+            except:
+                raise Exception("Validation of output schema failed")
+        
     
     def get_chat_history(self):
         return  self.initial_message.messages + self.chat_history_untouched[1:]
