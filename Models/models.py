@@ -291,11 +291,11 @@ class LLMModel:
     
     def validate_output_schema(self, output):
         if not isinstance(self.output_schema, dict) and self.try_to_parse:
-            try:
+            # try:
                 print("Validating output schema.....")
                 self.output_schema.model_validate(output)
-            except:
-               pass
+            # except:
+            #    pass
         
     
     def get_chat_history(self):
@@ -422,7 +422,11 @@ class LLMModel:
             return ChatAnthropic(model=self.model, **self.config.get("params",{}), streaming=False, model_kwargs =mk)
         elif self.provider == "fireworks_api":
             mk = self.config.get("model_kwargs", {})
-            if self.try_to_parse and self.output_schema != None: mk.update({"response_format":{"type": "json_object"}}) 
+            if self.try_to_parse and self.output_schema != None: 
+                mk.update({"response_format":{
+                    "type": "json_object",  
+                    "schema": self.output_schema}
+                           }) 
             if self.model in [
                 "dbrx-instruct",
                 "mixtral-8x22b-instruct",
