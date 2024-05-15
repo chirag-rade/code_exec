@@ -127,23 +127,33 @@ def CustomJSONParser(ai_message) -> dict:
         s = ai_message
     else:
         s = ai_message.content
-    r = parse_json_markdown(s)
-    if r is None:
-        # Extract JSON from text wrapped in triple backticks
-        try:
-            start_idx = s.index("```json") + len("```json")
-        except ValueError:
+    
+    
+    try:
+        r = parse_json_markdown(s)
+        if r is None:
+            # Extract JSON from text wrapped in triple backticks
             try:
-                start_idx = s.index("```") + len("```")
+                start_idx = s.index("```json") + len("```json")
             except ValueError:
-                start_idx = 0
+                try:
+                    start_idx = s.index("```") + len("```")
+                except ValueError:
+                    start_idx = 0
 
-        end_idx = s.rindex("```", start_idx) if "```" in s[start_idx:] else len(s)
+            end_idx = s.rindex("```", start_idx) if "```" in s[start_idx:] else len(s)
 
-        # Extract the JSON string
-        json_str = s[start_idx:end_idx].strip()
-        r = parse_json_markdown(json_str)
-    return r
+            # Extract the JSON string
+            json_str = s[start_idx:end_idx].strip()
+            r = parse_json_markdown(json_str)
+        return r
+    except Exception as e:
+        json_start = s.index('{')
+        json_end = s.rindex('}')
+        json_str = s[json_start:json_end+1]
+        json_obj = json.loads(json_str)
+        json_obj.update({"other_content": s[:json_start] + s[json_end+1:]})
+        return json_obj
 
 class LLMModel:
     def __init__(self, provider, model, 
@@ -183,27 +193,7 @@ class LLMModel:
         
     def init(self):
         self.chain = self.create_chain()
-        
-        
-    def old_parser(self, rx):
-        if self.provider in ["anthropic_api"]:
-                    try:
-                        response_json = json.loads(rx.content)
-                        return response_json 
-                    except Exception as e:
-                        if self.test: raise Exception("Invalid") # for debugging purposes
-                        json_start = rx.content.index('{')
-                        json_end = rx.content.rindex('}')
-                        json_str = rx.content[json_start:json_end+1]
-                        json_obj = json.loads( json_str)
-                        json_obj.update({"other_content": rx.content[:json_start] + rx.content[json_end+1:]})
-                        return json_obj
-                        
-                            
-
-        elif self.provider in ["fireworks_api", "openai_api"]:
-                    return json.loads(rx.content) #if self.output_schema != None else rx.content
-            
+         
 
     def is_tool_call(self,message):
         try:
@@ -234,9 +224,12 @@ class LLMModel:
       
         #here i check if you pass a dict
         if isinstance(messages, dict):
+            original_messages = copy.deepcopy(messages)
             #does it have messages in it?
             if "messages" in messages.keys():
-                if not retrying:IN_ = self.prepare_messages(messages["messages"])
+                formated_message = self.prepare_messages(messages["messages"])
+                messages.update(formated_message)
+                IN_= messages
             else: #no messages just inputs, we add messages
                 messages.update({"messages":[]})
                 IN_ = messages
@@ -251,6 +244,12 @@ class LLMModel:
             self.first_message = False
             
         #---------
+        
+        # if retrying:
+        #     print("retrying params:")
+        #     print(messages)
+        #     print(IN_)
+        #     print("retrying params end:")
     
         response =  self.chain.invoke(IN_)
         rx =  self.add_to_history_and_prepare_response(response)
@@ -267,21 +266,25 @@ class LLMModel:
             try:
                 #raise Exception("test exception raised")
                 result = CustomJSONParser(json.dumps(rx)) if tool_calling else CustomJSONParser(rx)
-                # if not tool_calling:
-                #     result = self.old_parser(rx)
                 self.validate_output_schema(result)
                 return result
             except Exception as e:
-                self.retry -= 1
+                #print("ERROR:", e)
                 if self.retry > 0:
                     print("retrying...", "retry remaining ", self.retry)
                     if self.retry_with_history:
-                        retry_message = HumanMessage(content="You failed to output a valid/parsable JSON. Please try again") if not self.use_tool else HumanMessage(content="You failed to call the function/tool properly. Please try again")
+                        if self.provider in ["fireworks_api"] or not self.use_tool:
+                            retry_message = HumanMessage(content="You failed to output a valid/parsable JSON. Please try again")
+                        else:
+                            retry_message = HumanMessage(content="You failed to call the function/tool properly. Please try again")
+                        
+                            
                         self.chat_history.append(retry_message)
                         self.chat_history_untouched.append(retry_message)
                     elif not self.retry_with_history and len(self.chat_history) > 0:  # remove last response from history - this will affect main chat history record
                         self.chat_history.pop(-1)  # Correctly remove the last item
-                    return self(messages, retrying=True)  # Recursively call __call__ with the original messages
+                    self.retry -= 1
+                    return self(original_messages, retrying=True)  # Recursively call __call__ with the original messages
                 self.retry = self.config.get('retry', 3)
                 raise Exception("JSON Parsing Retry exceeded")
             
@@ -291,12 +294,9 @@ class LLMModel:
     
     def validate_output_schema(self, output):
         if not isinstance(self.output_schema, dict) and self.try_to_parse:
-            # try:
-                print("Validating output schema.....")
-                self.output_schema.model_validate(output)
-            # except:
-            #    pass
-        
+            print("Validating output schema.....")
+            self.output_schema.model_validate(output)
+           
     
     def get_chat_history(self):
         return  self.initial_message.messages + self.chat_history_untouched[1:]
@@ -326,7 +326,7 @@ class LLMModel:
                                                 "type": "function",
                                                 "function": {"name": self.output_schema["title"]},
                                             },
-                )
+                        )
                         
                     elif self.provider == "anthropic_api":
                         format_instructions = f"Please, output only JSON nothing else, use the tool {self.output_schema["title"]} "
@@ -357,8 +357,14 @@ class LLMModel:
         return self.prompt_template | llm
           
     def prepare_messages(self, messages: list):
+       
+        
         self.chat_history.extend(messages)
         self.chat_history_untouched.extend(messages)
+        
+        
+        
+       
         #Convert to model specific format
         if self.provider in ["openai_api", "anthropic_api"] :
             return {"messages":self.chat_history}
@@ -383,13 +389,17 @@ class LLMModel:
                     new_messages.append(
                         {"content":message.content, "role":"function"}
                     )
+                    
+           
             return {"messages":new_messages}
             
 
     def add_to_history_and_prepare_response(self, response):
         #ensure response is an AImessage
-        if not isinstance(response, AIMessage):
+        if  isinstance(response, str):
             response = AIMessage(content=str(response))
+        elif isinstance(response, dict) and "content" in response.keys(): #fireworks
+            response = AIMessage(content=response["content"])
         #get response
         if self.use_history == True: 
             self.chat_history.append(response)
@@ -422,11 +432,8 @@ class LLMModel:
             return ChatAnthropic(model=self.model, **self.config.get("params",{}), streaming=False, model_kwargs =mk)
         elif self.provider == "fireworks_api":
             mk = self.config.get("model_kwargs", {})
-            if self.try_to_parse and self.output_schema != None: 
-                mk.update({"response_format":{
-                    "type": "json_object",  
-                    "schema": self.output_schema}
-                           }) 
+            if self.try_to_parse and self.output_schema != None:
+                mk.update({"response_format":{"type": "json_object",  "schema": self.output_schema}}) if isinstance(self.output_schema,dict) else self.output_schema.model_json_schema(),
             if self.model in [
                 "dbrx-instruct",
                 "mixtral-8x22b-instruct",

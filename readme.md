@@ -15,6 +15,7 @@ The LLMModel with the package is a Python class designed to interact with variou
 - **output_schema** (Optional): The Pydantic schema used to validate and parse the model's output. Default is `FeedbackBasic`.
 - **input_schema** (Optional): The expected pydantic input schema. This is also used to validate the input before sending it to the model. Default is `None`. If none is given, then output is returned as string without parsing.
 - **name** (Optional): A name identifier for the model instance. Default is `None`.
+- **use_tool** (Optional):This will use tool/function method to generate the output based on the schema. Default is True.
 - **prompt_template** (Optional): A langchain ChatPromptTemaplete to modify system message and add extra inputs. Default is `None`.
 - **try_to_parse** (Optional): Boolean flag to attempt parsing the model's output using the output_schema. Default is `True`.
 - **chat_history** (Optional): This can be used to load chat history from a database to continue a conversation `[]`.
