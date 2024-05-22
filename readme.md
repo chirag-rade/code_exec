@@ -32,3 +32,13 @@ The LLMModel with the package is a Python class designed to interact with variou
 
 
 **PLEASE SEE README.IPYNB FOR DETAILED USE CASES**
+
+```bash
+#INSTALL pygraphviz on Mac
+brew install graphviz
+python -m pip install \
+    --global-option=build_ext \
+    --global-option="-I$(brew --prefix graphviz)/include/" \
+    --global-option="-L$(brew --prefix graphviz)/lib/" \
+    pygraphviz
+```

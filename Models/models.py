@@ -127,8 +127,10 @@ def CustomJSONParser(ai_message) -> dict:
         s = ai_message
     else:
         s = ai_message.content
-    
-    
+
+    # Replace single quotes with double quotes
+    #s = s.replace("'", '"')
+
     try:
         r = parse_json_markdown(s)
         if r is None:
@@ -209,6 +211,7 @@ class LLMModel:
             return False
     
     def __call__(self, messages, retrying=False):
+        original_messages = copy.deepcopy(messages)
         
         if self.as_evaluator:
             #print(type(messages))
@@ -224,7 +227,6 @@ class LLMModel:
       
         #here i check if you pass a dict
         if isinstance(messages, dict):
-            original_messages = copy.deepcopy(messages)
             #does it have messages in it?
             if "messages" in messages.keys():
                 formated_message = self.prepare_messages(messages["messages"])
@@ -236,10 +238,13 @@ class LLMModel:
         elif isinstance(messages, list): #this  user pass a list of langchain messages
             IN_ = self.prepare_messages(messages)
             
+        else:
+            raise Exception("Wrong input format")
+            
         #----------
         
         if self.first_message == True:
-            #print("INFO:", "First Message")
+            #print("INFO:", IN_)
             self.initial_message = self.prompt_template.invoke(IN_)
             self.first_message = False
             
