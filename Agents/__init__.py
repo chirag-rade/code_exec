@@ -372,8 +372,9 @@ code_prompt = ChatPromptTemplate.from_messages(
             "3. If the test requires dummy files such as JSON or CSV use the write_file tool to create them and you can use create_directory tool to create a directory"
             "4. Execute the complete code and test using the python_repl tool. This approach eliminates the need for any unit test framework."
             "5. If you encounter any issues after invoking any tool, feel free to make necessary corrections and retry."
+            "NOTE: Do whatever you need to do and only give your final comment when done"
             "Remember, always write a complete code that can be executed as a standalone script. Do not modify the original code being tested."
-            "NOTE: Use the print function to output information for better observation and debugging."
+            "NOTE: make use of  print within your code to output information for better observation and debugging."
             "NOTE: Avoid using 'if __name__ == '__main__' as this will prevent the code from running."
             "Finally, report if the test passed and any other comment you have using this schema:\n {schema} and nothing else"
             
