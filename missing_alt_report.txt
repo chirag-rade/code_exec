@@ -1,0 +1,2 @@
+Image with src 'image2.jpg' is missing an alt tag on page Playground/page1.html.
+Image with src 'image6.jpg' is missing an alt tag on page Playground/page3.html.
