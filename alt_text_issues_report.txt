@@ -1,2 +1,0 @@
-Images missing alt tags:
-image1.jpg
