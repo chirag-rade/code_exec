@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "coderunner"
+version = "0.1.0"
+description = ""
+authors = ["amazingct <amazing.comptech@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+flask = "^3.0.3"
+matplotlib = "^3.9.0"
+pandas = "^2.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -22,24 +22,17 @@ def tool_node(state):
     """This runs tools in the graph
 
     It takes in an agent action and calls that tool and returns the result."""
+    
     messages = state["messages"]
-
-    # Based on the continue condition
-    # we know the last message involves a function call
     last_message = messages[-1]
-    # We construct an ToolInvocation from the function_call
-    try:
-        tool_input = json.loads(
-            last_message.additional_kwargs["function_call"]["arguments"]
-        )
-    except:
-        tool_input = {
-            "code": last_message.additional_kwargs["function_call"]["arguments"]
-        }  # sometimes the actual code is sent as a string instead of {code:"code"}
+    tool_input = last_message.additional_kwargs["function_call"]["arguments"]
+    tool_input = json.loads(tool_input)
+    #print(tool_input), type(tool_input)
     # We can pass single-arg inputs by value
-    if len(tool_input) == 1 and "__arg1" in tool_input:
+    if len(tool_input) == 1 in tool_input:
         tool_input = next(iter(tool_input.values()))
     tool_name = last_message.additional_kwargs["function_call"]["name"]
+    
     action = ToolInvocation(
         tool=tool_name,
         tool_input=tool_input,
@@ -52,6 +45,7 @@ def tool_node(state):
     )
     # We return a list, because this will get added to the existing list
     return {"messages": [function_message]}
+
 
 
 def code_extractor_node(state):
