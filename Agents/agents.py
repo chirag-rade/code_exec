@@ -4,7 +4,6 @@ from .schemas import *
 from .tools import *
 from langgraph.prebuilt.tool_executor import ToolExecutor
 from dotenv import load_dotenv
-from langchain.output_parsers import PydanticOutputParser
 load_dotenv()
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -14,10 +13,10 @@ from langchain_core.messages import (
     FunctionMessage,
     HumanMessage,
 )
-from langchain.tools.render import format_tool_to_openai_function
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.output_parsers import PydanticOutputParser
 from langchain.output_parsers.openai_tools import PydanticToolsParser
+import json
+
 
 #Base Prompt Template   
 def get_base_prompt_template(name=None, custom_instructions=None, agents=None):
@@ -124,14 +123,14 @@ code_prompt = ChatPromptTemplate.from_messages(
             "As a seasoned Python and JavaScript developer, you are known as code_runner. Your role involves the following steps:"
             "1. You will be given a piece of code along with a test scenario, which could be a happy path or an edge case."
             "2. Your task is to write the test code and combine it with the original code to form a complete script."
-            "3. If the test requires dummy files such as JSON or CSV use the write_file tool to create them and you can use create_directory tool to create a directory"
-            "4. Execute the complete code and test using the code_exec tool. This approach eliminates the need for any unit test framework."
+            "3. If the test requires dummy files such as JSON or CSV use the WriteFile tool to create them and you can use CreateDir tool to create a directory"
+            "4. Execute the complete code and test using the CodeExec tool. This approach eliminates the need for any unit test framework."
             "5. If you encounter any issues after invoking any tool, feel free to make necessary corrections and retry."
             "NOTE: Do whatever you need to do and only give your final comment when done"
             "Remember, always write a complete code that can be executed as a standalone script. Do not modify the original code being tested."
             "NOTE: make use of  print within your code to output information for better observation and debugging."
             "NOTE: Avoid using 'if __name__ == '__main__' as this will prevent the code from running."
-            "Finally, report if the test passed and any other comment you have using result tool and nothing else"
+            "Finally, report if the test passed and any other comment you have using TestResults tool and nothing else"
             
             
 
@@ -140,9 +139,9 @@ code_prompt = ChatPromptTemplate.from_messages(
         MessagesPlaceholder(variable_name="messages")
     ])
 
-parser = PydanticOutputParser(pydantic_object=TestResults)
-standard_test = parser.get_format_instructions()
-code_prompt = code_prompt.partial(schema = standard_test )
+# parser = PydanticOutputParser(pydantic_object=TestResults)
+# standard_test = parser.get_format_instructions()
+# code_prompt = code_prompt.partial(schema = standard_test )
 llm3 = ChatOpenAI(model="gpt-4o", 
                   # model_kwargs = {"response_format":{"type": "json_object"}}
                   temperature=0.1
@@ -157,7 +156,7 @@ def code_runner(state):
     print(out)
     tool_name = out[-1].__class__.__name__
     if tool_name != "TestResults":
-        ak = {"function_call":{"arguments":json.dumps(out[-1].dict()), "name": tool_name_schema_map[tool_name]}}
+        ak = {"function_call":{"arguments":json.dumps(out[-1].dict()), "name": tool_name}}
         message = [AIMessage(content = "", additional_kwargs=ak)]
     else:
         content = json.dumps(out[-1].dict())

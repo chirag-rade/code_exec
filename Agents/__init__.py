@@ -27,11 +27,12 @@ def tool_node(state):
     last_message = messages[-1]
     tool_input = last_message.additional_kwargs["function_call"]["arguments"]
     tool_input = json.loads(tool_input)
-    #print(tool_input), type(tool_input)
+    print("DEBUG", tool_input), type(tool_input)
     # We can pass single-arg inputs by value
-    if len(tool_input) == 1 in tool_input:
-        tool_input = next(iter(tool_input.values()))
+    # if len(tool_input) == 1:
+    #     tool_input = next(iter(tool_input.values()))
     tool_name = last_message.additional_kwargs["function_call"]["name"]
+    tool_name = tool_name_schema_map[tool_name]
     
     action = ToolInvocation(
         tool=tool_name,
@@ -41,7 +42,7 @@ def tool_node(state):
     response = tool_executor.invoke(action)
     # We use the response to create a FunctionMessage
     function_message = FunctionMessage(
-        content=f"{tool_name} response: {str(response)}", name=action.tool
+        content=f"{tool_schema_name_map[tool_name]} response: {str(response)}", name=tool_schema_name_map[action.tool]
     )
     # We return a list, because this will get added to the existing list
     return {"messages": [function_message]}
@@ -177,7 +178,7 @@ def code_runner_graph(test, code, recursion_limit):
 
     messages_in = [
         HumanMessage(
-            content="HERE IS THE CODE:\n\n ```{code}``` \n\n  INSTRUCTIONS:\n\n Write the test code to test for this \n {test}".format(
+            content="HERE IS THE CODE:\n\n ```{code}``` \n\n  INSTRUCTIONS:\n\n Write the test code to test for this: \n {test}".format(
                 code=code, test=test
             )
         )

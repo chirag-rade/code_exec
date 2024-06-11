@@ -1,11 +1,10 @@
-import requests
-import json
-from langchain.pydantic_v1 import BaseModel, Field, validator
+
+from langchain.pydantic_v1 import BaseModel, Field
 import os
 import subprocess
 from typing import Annotated
 from langchain_core.tools import tool
-import contextlib, io, subprocess, sys
+import contextlib, io, subprocess
 from enum import Enum
 
 
@@ -86,7 +85,7 @@ def code_exec(code: Annotated[str, "The code to execute."], language: Annotated[
 
 @tool
 def write_file(
-    name: Annotated[str, "The name of the file."],
+    file_name: Annotated[str, "The name of the file."],
     content: Annotated[str, "The content of the file."],
 ):
     """This tool writes a file with the given name and content to the Playground directory."""
@@ -98,7 +97,7 @@ def write_file(
         os.makedirs(directory)
 
     # Define the file path
-    file_path = os.path.join(directory, name)
+    file_path = os.path.join(directory, file_name)
 
     # Write the content to the file
     try:
@@ -110,7 +109,6 @@ def write_file(
 
     # Return the name and status of creation
     return {"full_path": file_path, "status": status}
-
 
 @tool
 def create_directory(name: Annotated[str, "The name of the directory."]):
@@ -150,8 +148,8 @@ class TestResults(BaseModel):
     )
 
 class CodeExec(BaseModel):
-    __name__ = "code_exec"
-    """Run Code"""
+    #__name__ = "code_exec"
+    """Run python and javascript Code"""
 
     code: str = Field(description="The code to be executed")
     language: str =  Field(description="The language of the code(python or javascript).")
@@ -159,14 +157,14 @@ class CodeExec(BaseModel):
 
 
 class WriteFile(BaseModel):
-    __name__ = "write_file"
+    #__name__ = "write_file"
     """Write File"""
 
-    name: str = Field(description="The name of the file.")
+    file_name: str = Field(description="The name of the file.")
     content: str = Field(description="The content of the file.")
 
 class CreateDir(BaseModel):
-    __name__ = "create_directory"
+    # __name__ = "create_directory"
     """Create Directory"""
 
     name: str = Field(description="The name of the directory.")
@@ -178,8 +176,17 @@ class CreateDir(BaseModel):
     
 all_schema= [CodeExec, TestResults, WriteFile, CreateDir]
 all_tools = [code_exec, write_file, create_directory]
+
+
 tool_name_schema_map = {
     "CodeExec":"code_exec",
     "WriteFile":"write_file",
     "CreateDir":"create_directory",
 }
+
+tool_schema_name_map = {
+    "code_exec": "CodeExec",
+    "write_file": "WriteFile",
+    "create_directory": "CreateDir",
+}
+

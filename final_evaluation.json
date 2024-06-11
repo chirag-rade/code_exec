@@ -1,31 +1,15 @@
 {
-    "scratchpad": "The conversation involves generating two SQL queries for a PostgreSQL database to compare the average and median purchase amounts between new and returning customers. The first query calculates the average purchase amount, and the second query calculates the median purchase amount using window functions and conditional logic. The code needs to be evaluated for correctness, efficiency, best practices, readability, and consistency. The conversation should also be assessed for completeness in addressing the user's request.",
+    "scratchpad": "The conversation consists of two main SQL queries. The first one is for calculating the average purchase amounts for new and returning customers using conditional aggregation. The second one is for calculating the median purchase amounts for the same groups using window functions. The user requested a SQL query for comparing average purchase amounts and later asked for the median as well.\n\nThe provided SQL queries seem logically sound but contain a critical syntax error in the second query, specifically in the assignment of the 'IsNewCustomer' flag. The user tests indicate the first query runs correctly and achieves the desired results, but there is no mention of a successful run for the second query.\n\nThe `IsNewCustomer` calculation should be addressed using a CASE statement. Additionally, it's crucial to ensure the queries handle edge cases like customers with a single purchase or when there are no new/returning customers.",
     "issues": [
         {
             "cell_position": 5,
-            "what": "Incorrect Syntax for Column Alias",
-            "why": "The SQL code uses `CustomerFirstPurchaseDate.PurchaseDate = SalesData.PurchaseDate AS IsNewCustomer`, which is not valid SQL syntax. The correct way to assign a boolean expression to an alias is by using a CASE statement.",
-            "where": "Line 6 of the second SQL query",
+            "what": "Syntax Error in SQL Query",
+            "why": "The SQL query to calculate the median purchase amount has a syntax error in the IsNewCustomer calculation. Specifically, the line 'CustomerFirstPurchaseDate.PurchaseDate = SalesData.PurchaseDate AS IsNewCustomer' should use a CASE statement or a Boolean expression to determine the value.",
+            "where": "WITH RankedPurchases AS (\n    \n    SELECT\n        SalesData.CustomerID,\n        SalesData.PurchaseAmount,\n        -- Determine if the transaction is from a new customer (first purchase)\n        CASE WHEN CustomerFirstPurchaseDate.PurchaseDate = SalesData.PurchaseDate THEN TRUE ELSE FALSE END AS IsNewCustomer,\n        ROW_NUMBER() OVER(\n            PARTITION BY SalesData.CustomerID, CustomerFirstPurchaseDate.PurchaseDate\n            ORDER BY SalesData.PurchaseAmount\n        ) AS RowAsc,\n        ROW_NUMBER() OVER(\n            PARTITION BY SalesData.CustomerID, CustomerFirstPurchaseDate.PurchaseDate\n            ORDER BY SalesData.PurchaseAmount DESC\n        ) AS RowDesc\n    FROM\n        SalesData\n    JOIN\n        -- Subquery to determine each customer's first PurchaseDate\n        (SELECT CustomerID, MIN(PurchaseDate) AS PurchaseDate\n        FROM SalesData\n        GROUP BY CustomerID) AS CustomerFirstPurchaseDate\n        ON SalesData.CustomerID = CustomerFirstPurchaseDate.CustomerID\n)",
             "severity": "Critical",
-            "fix": "Use a CASE statement to assign the boolean expression to `IsNewCustomer` as follows: `CASE WHEN CustomerFirstPurchaseDate.PurchaseDate = SalesData.PurchaseDate THEN TRUE ELSE FALSE END AS IsNewCustomer`."
-        },
-        {
-            "cell_position": 5,
-            "what": "Incorrect Logic for Median Calculation",
-            "why": "The median calculation logic is flawed because it does not correctly identify the middle value(s). The use of `RowAsc` and `RowDesc` in the WHERE clause can lead to incorrect results, especially for even numbers of rows.",
-            "where": "Lines 32-34 of the second SQL query",
-            "severity": "Critical",
-            "fix": "Instead of using `RowAsc` and `RowDesc`, use the `NTILE(2)` window function to divide the dataset into two halves and then compute the median."
-        },
-        {
-            "cell_position": 5,
-            "what": "Ambiguous Column Reference",
-            "why": "The column `IsNewCustomer` is ambiguous in the final SELECT statement because it is not clear which table or CTE it is coming from.",
-            "where": "Line 40 of the second SQL query",
-            "severity": "Medium",
-            "fix": "Qualify the column `IsNewCustomer` with the appropriate table or CTE alias, such as `Medians.IsNewCustomer`."
+            "fix": "Use a CASE statement to correctly assign the Boolean value for IsNewCustomer:\n\n```sql\nWITH RankedPurchases AS (\n    \n    SELECT\n        SalesData.CustomerID,\n        SalesData.PurchaseAmount,\n        -- Determine if the transaction is from a new customer (first purchase)\n        CASE WHEN CustomerFirstPurchaseDate.PurchaseDate = SalesData.PurchaseDate THEN TRUE ELSE FALSE END AS IsNewCustomer,\n        ROW_NUMBER() OVER(\n            PARTITION BY SalesData.CustomerID, CustomerFirstPurchaseDate.PurchaseDate\n            ORDER BY SalesData.PurchaseAmount\n        ) AS RowAsc,\n        ROW_NUMBER() OVER(\n            PARTITION BY SalesData.CustomerID, CustomerFirstPurchaseDate.PurchaseDate\n            ORDER BY SalesData.PurchaseAmount DESC\n        ) AS RowDesc\n    FROM\n        SalesData\n    JOIN\n        -- Subquery to determine each customer's first PurchaseDate\n        (SELECT CustomerID, MIN(PurchaseDate) AS PurchaseDate\n        FROM SalesData\n        GROUP BY CustomerID) AS CustomerFirstPurchaseDate\n        ON SalesData.CustomerID = CustomerFirstPurchaseDate.CustomerID\n)"
         }
     ],
-    "scoring_explanation": "The conversation did not fully satisfy the user's request due to critical issues in the second SQL query. The syntax error for the column alias and the flawed logic for median calculation significantly impact the correctness and usefulness of the code. Additionally, the ambiguous column reference further detracts from the code's readability and correctness. While the first query is correct, the critical issues in the second query prevent the overall conversation from achieving a high score.",
+    "scoring_explanation": "The first query is correct, efficient, and follows best practices for calculating average purchase amounts. However, the second query contains a critical syntax error, making it unusable without modification. Given the critical nature of this error and the fact that it prevents the query from running correctly, the maximum score is significantly impacted. Despite the correctness and completeness of the first query, the conversation does not fully satisfy the user's request due to the critical issue in the second query.",
     "score": 2
 }
