@@ -32,3 +32,17 @@ def make_code_exec_request(code, language):
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, data=json_body, headers=headers)
     return response.json()
+
+
+supported_languages = [
+    "python3",
+    "php",
+    "nodejs",
+    "kotlin",
+    "java",
+    "go",
+    "csharp",
+    "cpp",
+    "ruby",
+    "swift"
+]

@@ -38,6 +38,22 @@ def get_base_prompt_template(name=None, custom_instructions=None, agents=None):
     return prompt_template
 
 
+#TURN DIVIDER
+def turn_divider(state):
+    message = [
+                [{"role": "user", "content": "hy"},
+                {"role": "ai", "content": "hello"}],
+                [{"role": "user", "content": "hy"},
+                {"role": "ai", "content": "hello"}]
+            
+            ]
+    
+    return {
+        "messages":json.dumps(message),
+        "sender": "code_runner",
+    }
+
+
 
 #CODE EXTRACTORS
 code_extractor_prompt_template = get_base_prompt_template(
@@ -102,6 +118,7 @@ issue_finder_prompt_template = get_base_prompt_template(
     name="issue_finder",
     custom_instructions="Your role is to identify and list issues with the provided code. "
                         "Once you've identified the issues, share them with another agent called issue_verify. ",
+                        
     agents="issue_verify"
 )
 
@@ -120,16 +137,16 @@ code_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "As a seasoned Python and JavaScript developer, you are known as code_runner. Your role involves the following steps:"
+            "As a seasoned developer, you are known as code_runner. Your role involves the following steps:"
             "1. You will be given a piece of code along with a test scenario, which could be a happy path or an edge case."
             "2. Your task is to write the test code and combine it with the original code to form a complete script."
-            "3. If the test requires dummy files such as JSON or CSV use the WriteFile tool to create them and you can use CreateDir tool to create a directory"
+            "3. If the test requires dummy files such as JSON or CSV or needs to create directory or files, do everything within the test code by code"
             "4. Execute the complete code and test using the CodeExec tool. This approach eliminates the need for any unit test framework."
             "5. If you encounter any issues after invoking any tool, feel free to make necessary corrections and retry."
             "NOTE: Do whatever you need to do and only give your final comment when done"
             "Remember, always write a complete code that can be executed as a standalone script. Do not modify the original code being tested."
             "NOTE: make use of  print within your code to output information for better observation and debugging."
-            "NOTE: Avoid using 'if __name__ == '__main__' as this will prevent the code from running."
+            "NOTE: Avoid using 'if __name__ == '__main__' in python3 codes as this will prevent the code from running."
             "Finally, report if the test passed and any other comment you have using TestResults tool and nothing else"
             
             
@@ -153,7 +170,6 @@ model3= model3.with_retry(stop_after_attempt=3)
 
 def code_runner(state):
     out = model3.invoke(state["messages"])
-    print(out)
     tool_name = out[-1].__class__.__name__
     if tool_name != "TestResults":
         ak = {"function_call":{"arguments":json.dumps(out[-1].dict()), "name": tool_name}}

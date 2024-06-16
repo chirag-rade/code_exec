@@ -1,22 +1,29 @@
 from dotenv import load_dotenv
 from rich import print as md
 from rich.markdown import Markdown
+from rich.text import Text
 
 load_dotenv()
 import json
-
+from concurrent.futures import ThreadPoolExecutor
 from langchain_core.messages import FunctionMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt.tool_executor import ToolExecutor, ToolInvocation
 from Models.models import LLMModel
-
+import concurrent.futures
+import random
 from .agents import *
 from .prompts import *
 from .schemas import *
 from .tools import *
 from .utils import *
+from rich.console import Console
+console = Console()
 
+def display(content, color="red", id=None):
+    console.print(f"###{id}### " + content, style=color)
+  
 
 def tool_node(state):
     """This runs tools in the graph
@@ -27,7 +34,7 @@ def tool_node(state):
     last_message = messages[-1]
     tool_input = last_message.additional_kwargs["function_call"]["arguments"]
     tool_input = json.loads(tool_input)
-    print("DEBUG", tool_input), type(tool_input)
+    #print("DEBUG", tool_input), type(tool_input)
     # We can pass single-arg inputs by value
     # if len(tool_input) == 1:
     #     tool_input = next(iter(tool_input.values()))
@@ -119,7 +126,6 @@ def testers_graph(notebook):
     }
 
     for s in graph.stream(input_message, {"recursion_limit": 20}):
-        print("AGENT:", s)
         agent = list(s.keys())[0]
         content = s[agent]["messages"][-1].content
         if agent == "testers":
@@ -155,7 +161,7 @@ def testers_graph(notebook):
     return h
 
 
-def code_runner_graph(test, code, recursion_limit):
+def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
 
     workflow2 = StateGraph(AgentState)
     workflow2.add_node("code_runner", code_runner)
@@ -191,7 +197,7 @@ def code_runner_graph(test, code, recursion_limit):
     }
 
     for s in graph2.stream(input_message, {"recursion_limit": recursion_limit}):
-        print("AGENT:", s)
+        #print("AGENT:", s)
         agent = list(s.keys())[0]
         content = s[agent]["messages"][-1].content
         if agent != "tool_node":
@@ -203,19 +209,24 @@ def code_runner_graph(test, code, recursion_limit):
                 args = s[agent]["messages"][-1].additional_kwargs["function_call"][
                     "arguments"
                 ]
-                content = f"I am calling the function `{function_being_called}` with the following arguments: {args}"
-                content = Markdown(content)
-                md(content)
+                #content = f"I am calling the function `{function_being_called}` with the following arguments: {args}"
+                content = f"I am calling the function `{function_being_called}`"
+                # content = Markdown(content)
+                # md(Markdown(content, style=mdcolor))
+                display(content, mdcolor, id)
             else:
                 try:
                     content = str(json.loads(content)["response"])
                 except:
                     pass
-                content = Markdown(content)
-                md(content)
+                # content = Markdown(content)
+                # md(Markdown(content, style=mdcolor))
+                display(content, mdcolor, id)
         else:
-            content = Markdown(content)
-            md(content)
+            
+            # content = Markdown(content)
+            # md(Markdown(content, style=mdcolor))
+            display(content, mdcolor, id)
 
     return s[agent]["messages"][-1].content
 
@@ -240,10 +251,28 @@ def run(
     code = test_cases["code"]
     final_results = []
 
-    for i, t in enumerate(focus):
-        final_results.append(
-            code_runner_graph(t, code, recursion_limit=recursion_limit)
-        )
+    
+
+    with ThreadPoolExecutor() as executor:
+        colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
+        used_colors = set()
+        futures = []
+        unique_id = 0
+        
+        for t in focus:
+            if len(used_colors) == len(colors):
+                used_colors.clear()
+            available_colors = list(set(colors) - used_colors)
+            mdcolor = random.choice(available_colors)
+            used_colors.add(mdcolor)
+            
+            futures.append(executor.submit(code_runner_graph, t, code, recursion_limit=recursion_limit, mdcolor=mdcolor, id=unique_id)) #actual execution
+            unique_id += 1
+        
+        for future in concurrent.futures.as_completed(futures):
+            final_results.append(future.result())
+
+
 
     chat_template = ChatPromptTemplate.from_messages(
         [("system", "{main_prompt}"), MessagesPlaceholder(variable_name="messages")]

@@ -6,6 +6,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 import contextlib, io, subprocess
 from enum import Enum
+from .utils import make_code_exec_request, supported_languages
 
 
 # @tool
@@ -39,49 +40,50 @@ from enum import Enum
 #     else:
 #         return f"Failed to execute. Error: {response.text}"
 @tool
-def code_exec(code: Annotated[str, "The code to execute."], language: Annotated[str, "The language of the code (python or javascript)"]):
+def code_exec(code: Annotated[str, "The code to execute."], language: Annotated[str, f"The language of the code ({supported_languages})"]):
     """Use this to execute code when needed. If you want to see the output of a value,
     you should print it out with `print(...)`. This is visible to the user and you.
     """
-    if language == "python":
-        # Create StringIO objects to capture stdout and stderr
-        stdout = io.StringIO()
-        stderr = io.StringIO()
+    return make_code_exec_request(code=code, language=language)
+    # if language == "python3":
+    #     # Create StringIO objects to capture stdout and stderr
+    #     stdout = io.StringIO()
+    #     stderr = io.StringIO()
 
-        # Use context managers to redirect stdout and stderr to our StringIO objects
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            try:
-                # Use exec to execute the code
-                exec(code, locals())
-                result = stdout.getvalue()
-                error = stderr.getvalue()
-            except Exception as e:
-                # If an error occurs during execution, return the error message
-                return f"Failed to execute. Error: {repr(e)}"
+    #     # Use context managers to redirect stdout and stderr to our StringIO objects
+    #     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+    #         try:
+    #             # Use exec to execute the code
+    #             exec(code, locals())
+    #             result = stdout.getvalue()
+    #             error = stderr.getvalue()
+    #         except Exception as e:
+    #             # If an error occurs during execution, return the error message
+    #             return f"Failed to execute. Error: {repr(e)}"
 
-        # If no errors occurred, return the output
-        if error:
-            return f"Successfully executed:\n```python\n{code}\n```\nStdout: {result}\nStderr: {error}"
-        else:
-            return f"Successfully executed:\n```python\n{code}\n```\nStdout: {result}"
+    #     # If no errors occurred, return the output
+    #     if error:
+    #         return f"Successfully executed:\n```python\n{code}\n```\nStdout: {result}\nStderr: {error}"
+    #     else:
+    #         return f"Successfully executed:\n```python\n{code}\n```\nStdout: {result}"
     
     
-    elif language == "javascript":
-        try:
-            result = subprocess.run(
-                ["node", "-e", code], capture_output=True, text=True, check=True
-            )
-            return {
-                "result": result.stdout,
-                "status": "JavaScript code executed successfully",
-            }
-        except subprocess.CalledProcessError as e:
-            return {
-                "result": None,
-                "status": f"Failed to execute JavaScript code. Error: {repr(e)}",
-            }
-    else:
-        return f"Unsupported language: {language}"
+    # elif language == "javascript":
+    #     try:
+    #         result = subprocess.run(
+    #             ["node", "-e", code], capture_output=True, text=True, check=True
+    #         )
+    #         return {
+    #             "result": result.stdout,
+    #             "status": "JavaScript code executed successfully",
+    #         }
+    #     except subprocess.CalledProcessError as e:
+    #         return {
+    #             "result": None,
+    #             "status": f"Failed to execute JavaScript code. Error: {repr(e)}",
+    #         }
+    # else:
+    #     return f"Unsupported language: {language}"
 
 @tool
 def write_file(
@@ -152,7 +154,7 @@ class CodeExec(BaseModel):
     """Run python and javascript Code"""
 
     code: str = Field(description="The code to be executed")
-    language: str =  Field(description="The language of the code(python or javascript).")
+    language: str =  Field(description=f"The language of the code({supported_languages}).")
 
 
 
@@ -174,19 +176,24 @@ class CreateDir(BaseModel):
 
 
     
-all_schema= [CodeExec, TestResults, WriteFile, CreateDir]
-all_tools = [code_exec, write_file, create_directory]
+all_schema= [CodeExec, 
+             TestResults, 
+            #  WriteFile, CreateDir
+             ]
+all_tools = [code_exec, 
+            #  write_file, create_directory
+             ]
 
 
 tool_name_schema_map = {
     "CodeExec":"code_exec",
-    "WriteFile":"write_file",
-    "CreateDir":"create_directory",
+    # "WriteFile":"write_file",
+    # "CreateDir":"create_directory",
 }
 
 tool_schema_name_map = {
     "code_exec": "CodeExec",
-    "write_file": "WriteFile",
-    "create_directory": "CreateDir",
+    # "write_file": "WriteFile",
+    # "create_directory": "CreateDir",
 }
 
