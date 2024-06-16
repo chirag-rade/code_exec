@@ -117,7 +117,8 @@ edge_caser = LLMModel(
 issue_finder_prompt_template = get_base_prompt_template(
     name="issue_finder",
     custom_instructions="Your role is to identify and list issues with the provided code. "
-                        "Once you've identified the issues, share them with another agent called issue_verify. ",
+                        "Once you've identified the issues, share them with another agent called issue_verify. "
+                        "If the assistant failed to mention the installation of an external library that is used within the code , also include that in the issues",
                         
     agents="issue_verify"
 )
