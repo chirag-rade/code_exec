@@ -27,20 +27,20 @@ def split_notebook_turns(notebook_path):
         notebook_contents = f.read()
          
     parsed_notebooks = llm_as_evaluator.parse_notebooks([notebook_contents])
-    conversations = []
+    turns = []
     for notebook in parsed_notebooks:
         conversation = notebook.get('conversation', [])
         turn = []
         for i in range(len(conversation)):
-            if i == 0 or conversation[i]['role'] != conversation[i-1]['role']:
+            if conversation[i]['role'] == 'User':
                 if turn:
-                    conversations.append(turn)
+                    turns.append(turn)
                 turn = [{'role': conversation[i]['role'], 'content': conversation[i]['content']}]
             else:
                 turn.append({'role': conversation[i]['role'], 'content': conversation[i]['content']})
         if turn:
-            conversations.append(turn)
-    return conversations
+            turns.append(turn)
+    return turns
 
 def load_notebook(path):
     with open(path) as f:

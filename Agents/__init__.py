@@ -238,8 +238,8 @@ def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
 
 
 
-def execute_code_in_parallel(focus, code, recursion_limit,id):
-        with ThreadPoolExecutor() as executor:
+def execute_code_in_parallel(focus, code, recursion_limit,id, n_workers_inner_thread):
+        with ThreadPoolExecutor(max_workers=n_workers_inner_thread) as executor:
             colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
             used_colors = set()
             futures = []
@@ -269,7 +269,8 @@ def run(
     loaded_notebook=None,
     n_workers = None
 ):
-
+    if happy_cases_n > 10 or edge_cases_n > 10:
+        raise ValueError("Number of happy cases and edge cases each should not exceed 10.")
     if loaded_notebook:
         notebook = loaded_notebook
     else:
@@ -307,8 +308,11 @@ def run_multiple_turns(
     edge_cases_n=2,
     recursion_limit=30,
     loaded_notebook=None,
-    n_workers = 10
+    n_workers = 4,
+    n_workers_inner_thread = 4
 ):
+    if happy_cases_n > 10 or edge_cases_n > 10:
+        raise ValueError("Number of happy cases and edge cases each should not exceed 10.")
     if loaded_notebook:
         notebook = loaded_notebook
     else:
@@ -318,7 +322,7 @@ def run_multiple_turns(
     final_output = []
     from concurrent.futures import ThreadPoolExecutor
 
-    def process_turn(result, turn,  id):
+    def process_turn(result, turn,  id, n_workers_inner_thread):
         # print(f"#-{id}-#"*30)
         # print("DEBUG:", result)
         
@@ -337,7 +341,7 @@ def run_multiple_turns(
         focus = edge_cases[:edge_cases_n] + happy_paths[:happy_cases_n]
 
         # now parallelly run test with codia
-        results = execute_code_in_parallel(focus, code, recursion_limit,  id)
+        results = execute_code_in_parallel(focus, code, recursion_limit,  id, n_workers_inner_thread)
 
         # generate final eval for turn
         single_message = HumanMessage(
@@ -362,38 +366,21 @@ def run_multiple_turns(
             "eval": ans
         }
 
-    # final_output = []
-    # colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
-    # for i, turn in enumerate(turns):
-    #     mdcolor = colors[i % len(colors)]
-    #     # display(f"------------->>>>TURN {i+1}/{len(turns)}<<<<----------", mdcolor, f"TURN:{i}")
-    #     #print("DEBUG TURN: {}".format(turn))
-    #     result = turn_classifier([HumanMessage(json.dumps(turn))])
-    #     #print (turn)
-    #     should_be_tested = all([result["has_code"], result["complete_code"], result["can_be_tested"]])
-        
-    #     if should_be_tested:
-    #         final_output.append(process_turn(result, turn, f"TURN:{i}"))
-    #     else:
-    #         display(" SKIPPING TURN, NO CODE OR CAN'T BE TESTED", mdcolor, f"TURN:{i}")
-    # return final_output
     
-        
-        
-    def process_turn_wrapper(turn, i):
+    def process_turn_wrapper(turn, i, n_workers_inner_thread):
             colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
             mdcolor = colors[i % len(colors)]
             result = turn_classifier()([HumanMessage(json.dumps(turn))])
             should_be_tested = all([result["has_code"], result["complete_code"], result["can_be_tested"]])
             
             if should_be_tested:
-                return process_turn(result, turn, f"TURN:{i}")
+                return process_turn(result, turn, f"TURN:{i}", n_workers_inner_thread)
             else:
                 display(" SKIPPING TURN, NO CODE OR CAN'T BE TESTED", mdcolor, f"TURN:{i}")
                 return None
 
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
-        final_output = list(executor.map(lambda i_turn: process_turn_wrapper(i_turn[1], i_turn[0]), enumerate(turns)))
+        final_output = list(executor.map(lambda i_turn: process_turn_wrapper(i_turn[1], i_turn[0], n_workers_inner_thread), enumerate(turns)))
 
         final_output = [outcome for outcome in final_output if outcome is not None]
         return final_output
