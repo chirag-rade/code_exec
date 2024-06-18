@@ -88,7 +88,7 @@ def issue_finder_node(state):
     }
 
 
-def combine_tests_node(state):
+def combine_tests_node(state, not_graph=False):
     import copy
 
     testers_input = copy.deepcopy(state["messages"])
@@ -101,13 +101,15 @@ def combine_tests_node(state):
         "issues": issues["issues"],
         "code": happy_output["code"],
     }
+    if not_graph:
+        return combined_output
     return {
         "messages": [HumanMessage(json.dumps(combined_output))],
         "sender": "testers",
     }
 
 
-def testers_graph(notebook):
+def testers_graph(notebook, custom_input = None):
     workflow1 = StateGraph(AgentState)
     workflow1.add_node("code_extractor", code_extractor_node)
     workflow1.add_node("testers", combine_tests_node)
@@ -116,9 +118,13 @@ def testers_graph(notebook):
     workflow1.set_entry_point("code_extractor")
     graph = workflow1.compile()
 
-    messages_in = messages_in = [
-        HumanMessage(content="Here is the conversation {}".format(notebook))
-    ]
+    if custom_input:
+        messages_in = custom_input
+    else:
+        messages_in = [
+            HumanMessage(content="Here is the conversation {}".format(notebook))
+        ]
+   
     input_message = {
         "chat_history": [],
         "messages": messages_in,
@@ -231,12 +237,37 @@ def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
     return s[agent]["messages"][-1].content
 
 
+
+def execute_code_in_parallel(focus, code, recursion_limit,id):
+        with ThreadPoolExecutor() as executor:
+            colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
+            used_colors = set()
+            futures = []
+            unique_id = 0
+            
+            for t in focus:
+                if len(used_colors) == len(colors):
+                    used_colors.clear()
+                available_colors = list(set(colors) - used_colors)
+                mdcolor = random.choice(available_colors)
+                used_colors.add(mdcolor)
+                
+                futures.append(executor.submit(code_runner_graph, t, code, recursion_limit=recursion_limit, mdcolor=mdcolor, id=f"{id}->TEST{unique_id}")) #actual execution
+                unique_id += 1
+            
+            final_results = []
+            for future in concurrent.futures.as_completed(futures):
+                final_results.append(future.result())
+                
+        return final_results
+
 def run(
     notebook_path,
     happy_cases_n=2,
     edge_cases_n=2,
     recursion_limit=30,
     loaded_notebook=None,
+    n_workers = None
 ):
 
     if loaded_notebook:
@@ -252,53 +283,119 @@ def run(
     final_results = []
 
     
-
-    with ThreadPoolExecutor() as executor:
-        colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
-        used_colors = set()
-        futures = []
-        unique_id = 0
-        
-        for t in focus:
-            if len(used_colors) == len(colors):
-                used_colors.clear()
-            available_colors = list(set(colors) - used_colors)
-            mdcolor = random.choice(available_colors)
-            used_colors.add(mdcolor)
-            
-            futures.append(executor.submit(code_runner_graph, t, code, recursion_limit=recursion_limit, mdcolor=mdcolor, id=unique_id)) #actual execution
-            unique_id += 1
-        
-        for future in concurrent.futures.as_completed(futures):
-            final_results.append(future.result())
-
-
-
-    chat_template = ChatPromptTemplate.from_messages(
-        [("system", "{main_prompt}"), MessagesPlaceholder(variable_name="messages")]
-    )
-
-    chat_template = chat_template.partial(main_prompt=main_prompt)
+    execute_code_in_parallel(focus, code, recursion_limit, id="")
 
     single_message = HumanMessage(
-        f"Here is the actual Conversation: \n {notebook} \n"
-        f"Here is the main code extracted: \n {code} \n"
-        f"I decided to run the following Tests on the code: \n {happy_paths} \n"
-        f"Here are the results: \n {final_results} \n"
-        f"These are also some issues i see, i might be wrong though:\n {test_cases['issues']} \n"
-        "Now  please give a final evaluation  of  the entire conversation using the provided schema"
-        "Your Evaluation is for both the code provided and other aspect of the conversation"
-    )
+    f"Here is the actual Conversation: \n {notebook} \n"
+    f"Here is the main code extracted: \n {code} \n"
+    f"I decided to run the following Tests on the code: \n {happy_paths} \n"
+    f"Here are the results: \n {final_results} \n"
+    f"These are also some issues i see, i might be wrong though:\n {test_cases['issues']} \n"
+    "Now  please give a final evaluation  of  the entire conversation using the provided schema"
+    "Your Evaluation is for both the code provided and other aspect of the conversation"
+)   
 
-    evaluator = LLMModel(
-        provider="openai_api",
-        model="gpt-4o",
-        use_tool=True,
-        use_history=False,
-        output_schema=NotebookWiseFeedback,
-        prompt_template=chat_template,
-    )
 
     ans = evaluator([single_message])
 
     return ans
+
+
+def run_multiple_turns(
+    notebook_path,
+    happy_cases_n=2,
+    edge_cases_n=2,
+    recursion_limit=30,
+    loaded_notebook=None,
+    n_workers = 10
+):
+    if loaded_notebook:
+        notebook = loaded_notebook
+    else:
+        notebook = load_notebook(notebook_path)
+    
+    turns = split_notebook_turns(notebook_path) #adjust to work for loaded notebook also
+    final_output = []
+    from concurrent.futures import ThreadPoolExecutor
+
+    def process_turn(result, turn,  id):
+        # print(f"#-{id}-#"*30)
+        # print("DEBUG:", result)
+        
+        code = result["code"]
+        dependencies = result["dependencies"]
+        language = result["language"]
+        can_be_tested  = result["can_be_tested"]
+
+        messages_in_testers = {"messages": [
+            HumanMessage(content="Here is the code to be tested: {}. It is written in {} and has the following dependencies: {}.".format(code, language, dependencies))
+        ]}
+
+        tests = combine_tests_node(messages_in_testers, not_graph=True)
+        happy_paths = tests["happy"]
+        edge_cases = tests["edge"]
+        focus = edge_cases[:edge_cases_n] + happy_paths[:happy_cases_n]
+
+        # now parallelly run test with codia
+        results = execute_code_in_parallel(focus, code, recursion_limit,  id)
+
+        # generate final eval for turn
+        single_message = HumanMessage(
+            f"Here is the actual Conversation: \n {notebook} \n"
+            f"Here is the main code extracted: \n {code} \n"
+            f"I decided to run the following Tests on the code: \n {happy_paths} \n"
+            f"Here are the results: \n {results} \n"
+            f"These are also some issues i see, i might be wrong though:\n {tests['issues']} \n"
+            "Now  please give a final evaluation  of  the entire conversation using the provided schema"
+            "Your Evaluation is for both the code provided and other aspect of the conversation"
+        )
+
+        ans = evaluator([single_message])
+
+        return {
+            "turn": turn,
+            "code": code,
+            "dependencies": dependencies,
+            "can_be_tested" :can_be_tested,
+            "language": language,
+            "tests": focus,
+            "eval": ans
+        }
+
+    # final_output = []
+    # colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
+    # for i, turn in enumerate(turns):
+    #     mdcolor = colors[i % len(colors)]
+    #     # display(f"------------->>>>TURN {i+1}/{len(turns)}<<<<----------", mdcolor, f"TURN:{i}")
+    #     #print("DEBUG TURN: {}".format(turn))
+    #     result = turn_classifier([HumanMessage(json.dumps(turn))])
+    #     #print (turn)
+    #     should_be_tested = all([result["has_code"], result["complete_code"], result["can_be_tested"]])
+        
+    #     if should_be_tested:
+    #         final_output.append(process_turn(result, turn, f"TURN:{i}"))
+    #     else:
+    #         display(" SKIPPING TURN, NO CODE OR CAN'T BE TESTED", mdcolor, f"TURN:{i}")
+    # return final_output
+    
+        
+        
+    def process_turn_wrapper(turn, i):
+            colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white']
+            mdcolor = colors[i % len(colors)]
+            result = turn_classifier()([HumanMessage(json.dumps(turn))])
+            should_be_tested = all([result["has_code"], result["complete_code"], result["can_be_tested"]])
+            
+            if should_be_tested:
+                return process_turn(result, turn, f"TURN:{i}")
+            else:
+                display(" SKIPPING TURN, NO CODE OR CAN'T BE TESTED", mdcolor, f"TURN:{i}")
+                return None
+
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        final_output = list(executor.map(lambda i_turn: process_turn_wrapper(i_turn[1], i_turn[0]), enumerate(turns)))
+
+        final_output = [outcome for outcome in final_output if outcome is not None]
+        return final_output
+                
+    

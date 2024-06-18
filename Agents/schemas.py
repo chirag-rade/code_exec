@@ -5,6 +5,7 @@ from typing import Annotated, List, Sequence, TypedDict
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 import operator
+from .utils import make_code_exec_request, supported_languages
 
 
 #define graph state
@@ -102,3 +103,13 @@ class HappyPaths(BaseModel):
 class EdgeCases(BaseModel):
     """Represents a list of edge cases."""
     edge_cases: List[str] = Field(description="List of edge cases")
+    
+    
+class TurnClassification(BaseModel):
+    """TurnClassification"""
+    has_code: bool = Field(..., description="Indicates if the turn has code")
+    complete_code: bool = Field(..., description="Indicates if the code is complete and can be executed independently")
+    can_be_tested: bool = Field(..., description="Indicates if the code can be tested")
+    code: str = Field(..., description="The actual code as a string")
+    dependencies: List[str] = Field(..., description="List of dependencies required for the code")
+    language: str = Field(..., description=f"the programming language the code is written in. It must be any of the following {supported_languages}")

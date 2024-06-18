@@ -16,6 +16,7 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.output_parsers.openai_tools import PydanticToolsParser
 import json
+from .prompts import main_prompt
 
 
 #Base Prompt Template   
@@ -183,6 +184,44 @@ def code_runner(state):
         "messages":message,
         "sender": "code_runner",
     }
+    
+    
+#TURN CLASSIFICATION
+turn_classifier_prompt_template = get_base_prompt_template(
+    name="turn_classifier",
+    custom_instructions="Your task is to examine the given message and determine if it contains executable code. "
+                        "If the code is complete and can be executed, please report this. If there is no code present in the response, ensure to report this as well. Do not create any code, only report on the code present in the message.",
+    agents="testers"
+)
+
+
+turn_classifier = lambda: LLMModel(
+    provider="openai_api",
+    model="gpt-4o",
+    use_history=False,
+    name = "turn",
+    output_schema=TurnClassification,
+    prompt_template=turn_classifier_prompt_template
+)
+
+
+#FINAL EVALUATOR MERGER
+chat_template = ChatPromptTemplate.from_messages(
+    [("system", "{main_prompt}"), MessagesPlaceholder(variable_name="messages")]
+)
+
+chat_template = chat_template.partial(main_prompt=main_prompt)
+
+evaluator = LLMModel(
+    provider="openai_api",
+    model="gpt-4o",
+    use_tool=True,
+    use_history=False,
+    output_schema=NotebookWiseFeedback,
+    prompt_template=chat_template,
+) 
+    
+    
 
 
 tool_executor = ToolExecutor(all_tools)

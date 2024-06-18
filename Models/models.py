@@ -50,6 +50,16 @@ load_dotenv()
 
 openai_encoding = tiktoken.get_encoding("cl100k_base")
 
+import traceback
+import inspect
+
+def print_call_stack():
+    # Get the current stack trace
+    stack = inspect.stack()
+    
+    print("Call stack (most recent call last):")
+    for frame in stack:
+        print(f"Function: {frame.function} in {frame.filename}:{frame.lineno}")
 
 def num_tokens_from_string(obj: Any) -> int:
     """Returns the number of tokens in a text string."""
@@ -281,8 +291,12 @@ class LLMModel:
         #     print(messages)
         #     print(IN_)
         #     print("retrying params end:")
-
+        # if self.name == "turn":
+        #     print("################################################################")
+        #     print(IN_)
+        #print_call_stack()
         response = self.chain.invoke(IN_)
+        
         rx = self.add_to_history_and_prepare_response(response)
         # check if ita a tool call:
         tool_calling = self.is_tool_call(rx)
