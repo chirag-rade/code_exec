@@ -60,16 +60,17 @@ def router(state):
     
     
     
-def create_json_for_code_api(code):
-    code = "def test_code():\n    " + code.replace("\n", "\n    ")
-    code += "\n\n# R E A D M E\n# DO NOT CHANGE the code below, we use it to grade your submission. If changed your submission will be failed automatically.\nif __name__ == '__main__':  \n    test_code()"
+def create_json_for_code_api(code, language):
+    if language == "python3":
+        code = "def test_code():\n    " + code.replace("\n", "\n    ")
+        code += "\n\n# R E A D M E\n# DO NOT CHANGE the code below, we use it to grade your submission. If changed your submission will be failed automatically.\nif __name__ == '__main__':  \n    test_code()"
     return json.dumps({"code": code, "input": "None"})
 
 
 
 def make_code_exec_request(code, language):
     url = "https://code-exec-server-staging.turing.com/api/languages/{language}".format(language=language)
-    json_body = create_json_for_code_api(code)
+    json_body = create_json_for_code_api(code, language)
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, data=json_body, headers=headers)
     return response.json()
