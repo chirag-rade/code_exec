@@ -13,5 +13,3 @@ with open('final_evaluation.json', 'w') as f:
     json.dump(eval, f, indent=4)
 
 
-#TODO
-#fix turn
