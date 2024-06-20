@@ -323,9 +323,9 @@ def run(
 
 def run_multiple_turns(
     notebook_path,
-    happy_cases_n=2,
-    edge_cases_n=2,
-    recursion_limit=30,
+    happy_cases_n=1,
+    edge_cases_n=0,
+    recursion_limit=5,
     loaded_notebook=None,
     n_workers = 4,
     n_workers_inner_thread = 4
