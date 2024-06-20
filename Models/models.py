@@ -6,7 +6,7 @@ from abc import abstractmethod
 from typing import Any
 
 import tiktoken
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import (
     ChatPromptTemplate,
@@ -46,7 +46,7 @@ from pydantic import BaseModel, Field, validator
 
 from . import schemas
 
-load_dotenv()
+# load_dotenv()
 
 openai_encoding = tiktoken.get_encoding("cl100k_base")
 

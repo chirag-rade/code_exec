@@ -1,7 +1,7 @@
 import nbformat, json
 import requests
 from llm_as_evaluator_client.client import LLMasEvaluator
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from langchain_core.messages import (
     AIMessage,
     FunctionMessage,
@@ -15,7 +15,7 @@ from typing import Annotated, List, Sequence, TypedDict
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 import operator
-load_dotenv()
+# load_dotenv()
 from .config import testcoderesult
 LOCAL_BASE_URL = "http://127.0.0.1:8887"
 REMOTE_BASE_URL = "https://llm-as-evaluator.turing.com"

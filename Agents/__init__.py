@@ -1,9 +1,9 @@
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from rich import print as md
 from rich.markdown import Markdown
 from rich.text import Text
 import streamlit as st
-load_dotenv()
+# load_dotenv()
 import json
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.messages import FunctionMessage, HumanMessage

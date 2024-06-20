@@ -3,8 +3,8 @@ from Models.models import LLMModel
 from .schemas import *
 from .tools import *
 from langgraph.prebuilt.tool_executor import ToolExecutor
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
