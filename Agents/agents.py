@@ -180,6 +180,8 @@ def code_runner(state):
         content = json.dumps(out[-1].dict())
         message = [AIMessage(content=content)]
 
+    print("CODE RUNNER")
+    print (message)
     return {
         "messages":message,
         "sender": "code_runner",

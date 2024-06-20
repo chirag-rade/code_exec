@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from rich import print as md
 from rich.markdown import Markdown
 from rich.text import Text
-
+import streamlit as st
 load_dotenv()
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +19,7 @@ from .schemas import *
 from .tools import *
 from .utils import *
 from rich.console import Console
+from .config import testcoderesult
 console = Console()
 
 def display(content, color="red", id=None):
@@ -93,14 +94,18 @@ def combine_tests_node(state, not_graph=False):
 
     testers_input = copy.deepcopy(state["messages"])
     happy_output = happy_pather(testers_input)
+    print("Happy path output: ", happy_output)
     edge_output = edge_caser(testers_input)
+    print("Edge case output: ", edge_output)
     issues = issue_finder(testers_input)
+    print("Issues found: ", issues)
     combined_output = {
         "happy": happy_output["happy_paths"],
         "edge": edge_output["edge_cases"],
         "issues": issues["issues"],
         "code": happy_output["code"],
     }
+    print("Combined Test Cases: ", json.dumps(combined_output, indent=2))
     if not_graph:
         return combined_output
     return {
@@ -168,7 +173,8 @@ def testers_graph(notebook, custom_input = None):
 
 
 def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
-
+    print("TEST")
+    print(test)
     workflow2 = StateGraph(AgentState)
     workflow2.add_node("code_runner", code_runner)
     workflow2.add_node("tool_node", tool_node)
@@ -206,6 +212,8 @@ def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
         #print("AGENT:", s)
         agent = list(s.keys())[0]
         content = s[agent]["messages"][-1].content
+        # print ("CODE RUNNER")
+        # print (s[agent]["messages"][-1].content)
         if agent != "tool_node":
             # check if it is trying to call a function/tool
             if "function_call" in s[agent]["messages"][-1].additional_kwargs:
@@ -215,6 +223,7 @@ def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
                 args = s[agent]["messages"][-1].additional_kwargs["function_call"][
                     "arguments"
                 ]
+                print ("CODE RUNNER ARGS")
                 #content = f"I am calling the function `{function_being_called}` with the following arguments: {args}"
                 content = f"I am calling the function `{function_being_called}`"
                 # content = Markdown(content)
@@ -234,6 +243,10 @@ def code_runner_graph(test, code, recursion_limit, mdcolor=None, id=None):
             # md(Markdown(content, style=mdcolor))
             display(content, mdcolor, id)
 
+    print ("CODE RUNNER")
+    print (s[agent]["messages"][-1].content)
+    print ("TEST IN RUNNER")
+    print (test)
     return s[agent]["messages"][-1].content
 
 
@@ -258,7 +271,13 @@ def execute_code_in_parallel(focus, code, recursion_limit,id, n_workers_inner_th
             final_results = []
             for future in concurrent.futures.as_completed(futures):
                 final_results.append(future.result())
-                
+            # for future in concurrent.futures.as_completed(futures):
+            #     result = future.result()
+            #     final_results.append({
+            #         "id": unique_id,
+            #         "code": code,
+            #         "result": result
+            #     })
         return final_results
 
 def run(
@@ -353,9 +372,13 @@ def run_multiple_turns(
             "Now  please give a final evaluation  of  the entire conversation using the provided schema"
             "Your Evaluation is for both the code provided and other aspect of the conversation"
         )
-
+        print ("PRINT TEST CODE intit")
+        print (testcoderesult)
         ans = evaluator([single_message])
-
+        print ("HAPPY")
+        print (happy_paths)
+        print ("RESULTS")
+        print (results)
         return {
             "turn": turn,
             "code": code,
@@ -363,7 +386,9 @@ def run_multiple_turns(
             "can_be_tested" :can_be_tested,
             "language": language,
             "tests": focus,
-            "eval": ans
+            "eval": ans,
+            "testcoderesult": testcoderesult,
+            "results": [json.loads(result) for result in results]
         }
 
     

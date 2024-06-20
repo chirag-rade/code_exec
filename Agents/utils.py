@@ -15,13 +15,13 @@ from typing import Annotated, List, Sequence, TypedDict
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 import operator
-
 load_dotenv()
-
+from .config import testcoderesult
 LOCAL_BASE_URL = "http://127.0.0.1:8887"
 REMOTE_BASE_URL = "https://llm-as-evaluator.turing.com"
 llm_as_evaluator = LLMasEvaluator(REMOTE_BASE_URL, "public-engagement", "beta-test")
-
+print ("PRINT TEST CODE utils")
+print (testcoderesult)
 def split_notebook_turns(notebook_path):
     with open(notebook_path, "r") as f:
         notebook_contents = f.read()
@@ -71,8 +71,11 @@ def create_json_for_code_api(code, language):
 def make_code_exec_request(code, language):
     url = "https://code-exec-server-staging.turing.com/api/languages/{language}".format(language=language)
     json_body = create_json_for_code_api(code, language)
+    print ("PRINTING CODE")
+    print (code)
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, data=json_body, headers=headers)
+    testcoderesult.append({"code":code,"response":response.json()})
     return response.json()
 
 
