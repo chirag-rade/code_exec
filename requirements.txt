@@ -172,3 +172,4 @@ wrapt
 yarl
 pygraphviz
 python-dotenv
+langchain_core
